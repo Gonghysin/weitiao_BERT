@@ -172,3 +172,11 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# 自定义忽略文件
+./1.py
+
+# 忽略数据和模型文件夹
+results/models/
+datasets/
+
