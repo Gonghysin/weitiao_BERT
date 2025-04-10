@@ -178,6 +178,5 @@ cython_debug/
 
 # 忽略数据和模型文件夹
 # 忽略数据和模型文件夹
-results/models/
+models/
 datasets/
-
