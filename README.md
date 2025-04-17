@@ -15,3 +15,18 @@
 [技术文档](docs/技术文档.md)
 
 [日志文档](docs/日志文档.md)
+
+---
+
+```bash
+python src/train_model.py --do_train
+```
+
+```bash
+python src/train_model.py --do_predict
+```
+
+```bash
+python src/train_model.py --do_train --do_predict
+```
+

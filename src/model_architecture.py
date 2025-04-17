@@ -3,7 +3,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import BertModel, BertPreTrainedModel, BertConfig, AdamW, get_linear_schedule_with_warmup
+from torch.optim import AdamW
+from transformers import BertModel, BertPreTrainedModel, BertConfig, get_linear_schedule_with_warmup
 
 
 class BertForDialogueActClassification(BertPreTrainedModel):

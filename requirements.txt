@@ -1,0 +1,23 @@
+# 基础依赖
+numpy>=1.20.0
+pandas>=1.3.0
+scikit-learn>=0.24.0
+matplotlib>=3.4.0
+tqdm>=4.60.0
+
+# PyTorch和Transformers
+torch>=1.9.0
+transformers>=4.8.0
+
+# 文本处理
+jieba>=0.42.1
+opencc-python-reimplemented>=0.1.6
+regex>=2021.8.3
+
+# 日志和工具
+logging>=0.5.1.2
+argparse>=1.4.0
+
+# 其他依赖
+tensorboard>=2.6.0
+
