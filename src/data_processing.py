@@ -88,15 +88,17 @@ def normalize_text(text, to_simplified=True):
     
     return text
 
-def tokenize_with_bert(text, max_length=512, preserve_context=True, tokenizer=None):
+def tokenize_with_bert(text, max_length=512, preserve_context=True, tokenizer=None, context=None, context_size=2):
     """
-    使用BERT分词器对文本进行分词处理
+    使用BERT分词器对文本进行分词处理，支持上下文保留
     
     参数:
         text (str): 需要分词的文本
         max_length (int): 最大序列长度，默认为512
         preserve_context (bool): 是否保留上下文，默认为True
         tokenizer (BertTokenizer): 可选的已加载的分词器实例
+        context (list): 上下文文本列表，通常为之前的对话
+        context_size (int): 保留的上下文数量，默认为2轮
         
     返回:
         dict: 包含tokenized结果的字典，包括:
@@ -104,6 +106,7 @@ def tokenize_with_bert(text, max_length=512, preserve_context=True, tokenizer=No
             - token_type_ids: 段落ID
             - attention_mask: 注意力掩码
             - tokens: 分词后的token列表
+            - context_positions: 保留上下文的位置信息
     """
     if not text or not isinstance(text, str):
         return None
@@ -124,9 +127,45 @@ def tokenize_with_bert(text, max_length=512, preserve_context=True, tokenizer=No
                     logger.error(f"加载BERT分词器失败: {e}")
                     return None
         
+        # 处理上下文
+        full_text = text
+        context_positions = {}
+        
+        if preserve_context and context and isinstance(context, list) and len(context) > 0:
+            # 只保留最近的context_size轮对话作为上下文
+            recent_context = context[-context_size:] if len(context) > context_size else context
+            
+            # 为每轮对话添加特殊标记，以便区分
+            processed_context = []
+            position_start = 0
+            
+            for i, ctx in enumerate(recent_context):
+                if ctx and isinstance(ctx, str):
+                    # 将上下文加入处理列表，并记录位置
+                    context_marker = f"[CTX{i+1}]"  # 添加上下文标记
+                    processed_ctx = f"{context_marker} {ctx}"
+                    processed_context.append(processed_ctx)
+                    
+                    # 记录上下文的位置信息
+                    position_end = position_start + len(processed_ctx)
+                    context_positions[f'context_{i+1}'] = (position_start, position_end)
+                    position_start = position_end + 1  # +1 for space
+            
+            # 将当前文本标记为主文本
+            current_text_marker = "[CURRENT]"
+            marked_text = f"{current_text_marker} {text}"
+            
+            # 记录当前文本的位置
+            current_text_start = position_start
+            current_text_end = current_text_start + len(marked_text)
+            context_positions['current_text'] = (current_text_start, current_text_end)
+            
+            # 将上下文和当前文本连接起来
+            full_text = " ".join(processed_context + [marked_text])
+        
         # 对文本进行分词
         encoding = tokenizer(
-            text,
+            full_text,
             truncation=True,
             max_length=max_length,
             padding='max_length' if max_length else False,
@@ -143,6 +182,13 @@ def tokenize_with_bert(text, max_length=512, preserve_context=True, tokenizer=No
         # 获取分词后的token列表
         tokens = tokenizer.convert_ids_to_tokens(result['input_ids'])
         result['tokens'] = tokens
+        
+        # 添加上下文位置信息
+        if context_positions:
+            result['context_positions'] = context_positions
+            result['has_context'] = True
+        else:
+            result['has_context'] = False
         
         return result
     
@@ -247,9 +293,9 @@ def process_dataset(input_file, output_file=None, to_simplified=True):
     return processed_data
 
 def process_dataset_with_tokenization(input_file, output_file=None, to_simplified=True, 
-                                      apply_stopwords=False, max_length=512):
+                                       apply_stopwords=False, max_length=512, context_size=2):
     """
-    处理IMCS-DAC数据集并进行分词处理
+    处理IMCS-DAC数据集并进行分词处理，支持上下文保留
     
     参数:
         input_file (str): 输入文件路径
@@ -257,6 +303,7 @@ def process_dataset_with_tokenization(input_file, output_file=None, to_simplifie
         to_simplified (bool): 是否转换为简体中文，默认为True
         apply_stopwords (bool): 是否应用停用词过滤，默认为False
         max_length (int): 最大序列长度，默认为512
+        context_size (int): 保留的上下文对话轮数，默认为2
         
     返回:
         dict: 处理后的数据
@@ -285,9 +332,10 @@ def process_dataset_with_tokenization(input_file, output_file=None, to_simplifie
     
     for dialogue_id, dialogue in data.items():
         processed_dialogue = []
+        dialogue_context = []  # 存储对话上下文
         
         # 处理整个对话
-        for utterance in dialogue:
+        for i, utterance in enumerate(dialogue):
             # 深拷贝utterance字典
             processed_utterance = utterance.copy()
             
@@ -296,12 +344,21 @@ def process_dataset_with_tokenization(input_file, output_file=None, to_simplifie
             cleaned_sentence = clean_text(sentence)
             normalized_sentence = normalize_text(cleaned_sentence, to_simplified)
             
-            # BERT分词处理
+            # 获取当前话语的上下文
+            current_context = dialogue_context[-context_size:] if len(dialogue_context) > 0 else []
+            
+            # BERT分词处理，包含上下文
             tokenization_result = tokenize_with_bert(
                 normalized_sentence, 
                 max_length=max_length,
-                tokenizer=tokenizer
+                preserve_context=True if current_context else False,
+                tokenizer=tokenizer,
+                context=current_context,
+                context_size=context_size
             )
+            
+            # 将当前处理后的句子添加到对话上下文中
+            dialogue_context.append(normalized_sentence)
             
             # 如果需要，应用停用词过滤
             if apply_stopwords and tokenization_result:
@@ -309,6 +366,8 @@ def process_dataset_with_tokenization(input_file, output_file=None, to_simplifie
                 tokenization_result['filtered_tokens'] = filtered_tokens
             
             processed_utterance['sentence'] = normalized_sentence
+            processed_utterance['context_history'] = current_context.copy() if current_context else []
+            
             if tokenization_result:
                 processed_utterance['tokenization'] = tokenization_result
             
@@ -332,8 +391,16 @@ def main():
     input_file = 'src/datasets/IMCS-DAC_train.json'
     output_file = 'src/datasets/IMCS-DAC_train_processed.json'
     
-    # 处理数据集
+    # 处理数据集 - 基础处理
     processed_data = process_dataset(input_file, output_file)
+    
+    # 处理数据集 - 带分词和上下文
+    output_file_tokenized = 'src/datasets/IMCS-DAC_train_tokenized.json'
+    tokenized_data = process_dataset_with_tokenization(
+        input_file, 
+        output_file_tokenized,
+        context_size=2
+    )
     
     if processed_data:
         # 输出处理统计信息
